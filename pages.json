@@ -1,0 +1,41 @@
+{
+  "pages": [
+    {
+      "path": "src/pages/login/index",
+      "style": {
+        "navigationBarTitleText": "连接面板"
+      }
+    },
+    {
+      "path": "src/pages/dashboard/index",
+      "style": {
+        "navigationBarTitleText": "控制台"
+      }
+    },
+    {
+      "path": "src/pages/instances/index",
+      "style": {
+        "navigationBarTitleText": "实例"
+      }
+    },
+    {
+      "path": "src/pages/settings/index",
+      "style": {
+        "navigationBarTitleText": "设置"
+      }
+    },
+    {
+      "path": "src/pages/instance-detail/index",
+      "style": {
+        "navigationBarTitleText": "实例详情"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "MCSManager Lite",
+    "navigationBarBackgroundColor": "#F8F8F8",
+    "backgroundColor": "#EFF3F8"
+  },
+  "uniIdRouter": {}
+}

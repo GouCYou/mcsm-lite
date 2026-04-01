@@ -3,31 +3,31 @@
     {
       "path": "src/pages/login/index",
       "style": {
-        "navigationBarTitleText": "连接面板"
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "src/pages/dashboard/index",
       "style": {
-        "navigationBarTitleText": "控制台"
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "src/pages/instances/index",
       "style": {
-        "navigationBarTitleText": "实例"
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "src/pages/settings/index",
       "style": {
-        "navigationBarTitleText": "设置"
+        "navigationStyle": "custom"
       }
     },
     {
       "path": "src/pages/instance-detail/index",
       "style": {
-        "navigationBarTitleText": "实例详情"
+        "navigationStyle": "custom"
       }
     }
   ],

@@ -110,7 +110,7 @@ export function createFolder(options = {}) {
   });
 }
 
-// 获取下载地址配置。
+// 获取文件下载/预览地址配置。
 export function fetchDownloadAddress(options = {}) {
   return request({
     url: '/api/files/download',
@@ -118,8 +118,7 @@ export function fetchDownloadAddress(options = {}) {
     query: buildFileQuery(options, {
       file_name: options.fileName,
     }),
-    loading: true,
-    loadingText: '正在获取下载地址...',
+    loading: false,
   });
 }
 

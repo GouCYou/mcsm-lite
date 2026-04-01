@@ -5,7 +5,7 @@
         v-for="item in navItems"
         :key="item.key"
         class="tabbar-item"
-        :class="{ active: current === item.key }"
+        :class="{ active: current === item.key, disabled: animating }"
         @click="navigate(item)"
       >
         <view class="tabbar-icon-wrap">
@@ -29,42 +29,43 @@ const props = defineProps({
     type: String,
     default: 'dashboard',
   },
+  animating: {
+    type: Boolean,
+    default: false,
+  },
 });
+
+const emit = defineEmits(['navigate']);
 
 // 主导航配置放在组件内部统一维护。
 const navItems = [
   {
     key: 'dashboard',
     label: '控制台',
-    path: '/src/pages/dashboard/index',
     icon: '/static/tabbar/dashboard.png',
     activeIcon: '/static/tabbar/dashboard-active.png',
   },
   {
     key: 'instances',
     label: '实例',
-    path: '/src/pages/instances/index',
     icon: '/static/tabbar/instances.png',
     activeIcon: '/static/tabbar/instances-active.png',
   },
   {
     key: 'settings',
     label: '设置',
-    path: '/src/pages/settings/index',
     icon: '/static/tabbar/settings.png',
     activeIcon: '/static/tabbar/settings-active.png',
   },
 ];
 
-// 在三个一级页面之间切换时使用 redirectTo，避免页面栈不断累积。
+// 点击导航项时由外层容器统一决定动画方向和跳转时机。
 function navigate(item) {
-  if (item.key === props.current) {
+  if (props.animating || item.key === props.current) {
     return;
   }
 
-  uni.redirectTo({
-    url: item.path,
-  });
+  emit('navigate', item.key);
 }
 </script>
 
@@ -78,19 +79,36 @@ function navigate(item) {
 }
 
 .tabbar-panel {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 16rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.8);
+  border: 1rpx solid rgba(255, 255, 255, 0.62);
   border-radius: 36rpx;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(248, 250, 252, 0.92));
-  box-shadow: 0 20rpx 44rpx rgba(15, 23, 42, 0.14);
-  backdrop-filter: blur(24rpx);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.18)),
+    rgba(255, 255, 255, 0.16);
+  box-shadow:
+    0 20rpx 44rpx rgba(15, 23, 42, 0.12),
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(32rpx) saturate(145%);
+}
+
+.tabbar-panel::before {
+  content: '';
+  position: absolute;
+  inset: 1rpx;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0) 28%),
+    radial-gradient(circle at 88% 10%, rgba(142, 206, 255, 0.2), rgba(142, 206, 255, 0) 24%);
+  pointer-events: none;
 }
 
 .tabbar-item {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -100,12 +118,35 @@ function navigate(item) {
   min-height: 88rpx;
   padding: 10rpx 6rpx;
   border-radius: 28rpx;
-  transition: all 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
   box-sizing: border-box;
 }
 
 .tabbar-item.active {
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.14), rgba(14, 165, 233, 0.08));
+  background:
+    linear-gradient(135deg, rgba(82, 153, 255, 0.22), rgba(148, 210, 255, 0.12)),
+    rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.54),
+    0 14rpx 28rpx rgba(61, 122, 214, 0.12);
+}
+
+.tabbar-item.active::before {
+  content: '';
+  position: absolute;
+  inset: 6rpx;
+  border-radius: 24rpx;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+
+.tabbar-item.disabled {
+  pointer-events: none;
 }
 
 .tabbar-icon-wrap {
@@ -115,11 +156,19 @@ function navigate(item) {
   width: 56rpx;
   height: 56rpx;
   border-radius: 18rpx;
-  background: rgba(255, 255, 255, 0.74);
+  background: rgba(255, 255, 255, 0.28);
+  border: 1rpx solid rgba(255, 255, 255, 0.36);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(22rpx) saturate(140%);
 }
 
 .tabbar-item.active .tabbar-icon-wrap {
-  background: rgba(255, 255, 255, 0.92);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.2)),
+    rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.58),
+    0 10rpx 22rpx rgba(61, 122, 214, 0.12);
 }
 
 .tabbar-icon {
@@ -135,6 +184,10 @@ function navigate(item) {
 
 .tabbar-item.active .tabbar-label {
   color: #1d4ed8;
+}
+
+.tabbar-item:active {
+  transform: scale(0.985);
 }
 
 .tabbar-safe {

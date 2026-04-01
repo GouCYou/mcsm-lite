@@ -1,6 +1,6 @@
 <template>
-  <view class="settings-page">
-    <AppPageScroll :refreshing="refreshing" tab-page @refresh="handlePageRefresh">
+  <AppTabFrame current="settings" :refreshing="refreshing" @refresh="handlePageRefresh">
+    <view class="settings-page" :class="{ 'settings-page-leave': loggingOut }">
       <view class="app-page app-tab-page app-stack">
         <view class="app-card app-hero-card">
           <view class="app-page-title">连接与偏好</view>
@@ -66,17 +66,15 @@
           <view v-else class="app-empty">还没有节点摘要，下拉页面即可重新同步。</view>
         </view>
       </view>
-    </AppPageScroll>
-    <AppTabbar current="settings" />
-  </view>
+    </view>
+  </AppTabFrame>
 </template>
 
 <script setup>
 // 设置页负责展示连接配置、节点选择和重新连接入口。
 import { computed, ref } from 'vue';
 import { fetchOverview } from '../../api/dashboard';
-import AppPageScroll from '../../components/AppPageScroll.vue';
-import AppTabbar from '../../components/AppTabbar.vue';
+import AppTabFrame from '../../components/AppTabFrame.vue';
 import { useConfigStore } from '../../stores/config';
 import { showToast } from '../../utils/message';
 
@@ -91,6 +89,7 @@ const daemonCount = computed(() => remoteList.value.length);
 
 // 标记页面内部刷新状态。
 const isRefreshing = ref(false);
+const loggingOut = ref(false);
 
 // 暴露给滚动容器的刷新状态。
 const refreshing = computed(() => isRefreshing.value);
@@ -148,17 +147,29 @@ async function refreshOverview() {
 
 // 退出当前登录并回到初始页。
 function handleLogout() {
+  if (loggingOut.value) {
+    return;
+  }
+
+  loggingOut.value = true;
   configStore.reset();
 
-  uni.reLaunch({
-    url: '/src/pages/login/index',
-  });
+  setTimeout(() => {
+    uni.reLaunch({
+      url: '/src/pages/login/index?nav=logout',
+    });
+  }, 220);
 }
 </script>
 
 <style scoped>
 .settings-page {
   min-height: 100vh;
+  transform-origin: center center;
+}
+
+.settings-page-leave {
+  animation: settings-page-leave 0.22s ease forwards;
 }
 
 .info-grid {
@@ -170,8 +181,12 @@ function handleLogout() {
 .info-item {
   padding: 20rpx;
   border-radius: 22rpx;
-  background: rgba(248, 250, 252, 0.9);
-  border: 1rpx solid rgba(148, 163, 184, 0.12);
+  background: var(--app-surface-soft);
+  border: 1rpx solid var(--app-border);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.56),
+    0 12rpx 28rpx rgba(77, 102, 140, 0.08);
+  backdrop-filter: blur(24rpx) saturate(138%);
 }
 
 .info-item-wide {
@@ -199,6 +214,8 @@ function handleLogout() {
 }
 
 .settings-action-pill {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -209,10 +226,26 @@ function handleLogout() {
   box-sizing: border-box;
 }
 
+.settings-action-pill::before,
+.daemon-card::before {
+  content: '';
+  position: absolute;
+  inset: 1rpx;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 14% 10%, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0) 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+
 .settings-action-pill.danger-fill {
   color: #ffffff;
-  background: linear-gradient(135deg, #fb7185, #ef4444);
-  box-shadow: 0 12rpx 26rpx rgba(239, 68, 68, 0.2);
+  background: linear-gradient(135deg, rgba(251, 113, 133, 0.92), rgba(239, 68, 68, 0.82));
+  border: 1rpx solid rgba(255, 255, 255, 0.28);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.38),
+    0 12rpx 26rpx rgba(239, 68, 68, 0.18);
+  backdrop-filter: blur(24rpx) saturate(140%);
 }
 
 .settings-action-icon {
@@ -251,10 +284,16 @@ function handleLogout() {
 }
 
 .daemon-card {
+  position: relative;
+  overflow: hidden;
   padding: 24rpx;
   border-radius: 24rpx;
-  background: rgba(248, 250, 252, 0.88);
-  border: 1rpx solid rgba(148, 163, 184, 0.12);
+  background: var(--app-surface-soft);
+  border: 1rpx solid var(--app-border);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.56),
+    0 14rpx 32rpx rgba(77, 102, 140, 0.1);
+  backdrop-filter: blur(26rpx) saturate(140%);
 }
 
 .daemon-head {
@@ -268,5 +307,22 @@ function handleLogout() {
   font-size: 30rpx;
   font-weight: 700;
   color: #0f172a;
+}
+
+.settings-action-pill:active,
+.daemon-card:active {
+  transform: scale(0.992);
+}
+
+@keyframes settings-page-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-20rpx) scale(1.01);
+  }
 }
 </style>

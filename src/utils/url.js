@@ -3,7 +3,7 @@ export function normalizeBaseUrl(baseUrl = '') {
   return String(baseUrl).trim().replace(/\/+$/, '');
 }
 
-// 补全用户输入的面板地址，允许只输入 IP 或域名。
+// 补全单个地址候选，允许只输入 IP 或域名。
 export function completeBaseUrlInput(baseUrl = '') {
   const rawValue = String(baseUrl || '').trim();
 
@@ -24,6 +24,48 @@ export function completeBaseUrlInput(baseUrl = '') {
   } catch (error) {
     return normalizeBaseUrl(withProtocol);
   }
+}
+
+// 将已保存的地址还原为更适合用户编辑的显示值。
+export function getBaseUrlDisplayValue(baseUrl = '') {
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+
+  if (!normalizedBaseUrl) {
+    return '';
+  }
+
+  try {
+    const parsedUrl = new URL(normalizedBaseUrl);
+    const hostname = parsedUrl.hostname || '';
+    const pathname = parsedUrl.pathname && parsedUrl.pathname !== '/' ? parsedUrl.pathname : '';
+    const search = parsedUrl.search || '';
+    const hash = parsedUrl.hash || '';
+    const port = parsedUrl.port && parsedUrl.port !== '23333' ? `:${parsedUrl.port}` : '';
+
+    return `${hostname}${port}${pathname}${search}${hash}`;
+  } catch (error) {
+    return normalizedBaseUrl
+      .replace(/^https?:\/\//i, '')
+      .replace(/:23333(?=\/|$)/, '');
+  }
+}
+
+// 根据用户输入生成面板地址候选，未显式填写协议时自动探测 https/http。
+export function buildBaseUrlCandidates(baseUrl = '') {
+  const rawValue = String(baseUrl || '').trim();
+
+  if (!rawValue) {
+    return [];
+  }
+
+  if (/^https?:\/\//i.test(rawValue)) {
+    return [completeBaseUrlInput(rawValue)];
+  }
+
+  const httpsCandidate = completeBaseUrlInput(`https://${rawValue}`);
+  const httpCandidate = completeBaseUrlInput(`http://${rawValue}`);
+
+  return Array.from(new Set([httpsCandidate, httpCandidate].filter(Boolean)));
 }
 
 // 将对象转换为 query 字符串。

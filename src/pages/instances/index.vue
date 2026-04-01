@@ -1,6 +1,6 @@
 ﻿<template>
-  <view class="instances-page">
-    <AppPageScroll :refreshing="refreshing" tab-page @refresh="handlePageRefresh">
+  <AppTabFrame current="instances" :refreshing="refreshing" @refresh="handlePageRefresh">
+    <view class="instances-page">
       <view class="app-page app-tab-page app-stack">
         <view class="app-card app-hero-card">
           <view class="app-page-title">实例总览</view>
@@ -21,14 +21,12 @@
         </view>
 
         <view class="app-card">
-          <picker mode="selector" :range="daemonOptions" range-key="label" :value="daemonIndex" @change="handleDaemonChange">
-            <view class="instance-node-picker">
-              <text class="instance-node-label">当前节点</text>
-              <text class="instance-node-value">{{ currentDaemonLabel }}</text>
-              <view v-if="query.instanceName" class="instance-filter-clear-inline" @click.stop="resetSearch">清空</view>
-              <view class="instance-node-arrow" />
-            </view>
-          </picker>
+          <view class="instance-node-picker" @click="openDaemonMenu">
+            <text class="instance-node-label">当前节点</text>
+            <text class="instance-node-value">{{ currentDaemonLabel }}</text>
+            <view v-if="query.instanceName" class="instance-filter-clear-inline" @click.stop="resetSearch">清空</view>
+            <view class="instance-node-arrow" />
+          </view>
 
           <view class="instance-search-bar">
             <input
@@ -42,6 +40,36 @@
             <view class="instance-search-submit" @click="handleSearch">
               <view class="instance-search-icon" />
             </view>
+          </view>
+        </view>
+
+        <view
+          v-if="daemonMenu.visible"
+          class="daemon-overlay"
+          :class="{ 'daemon-overlay-leave': daemonMenu.closing }"
+          @click="closeDaemonMenu"
+        >
+          <view class="daemon-sheet" :class="{ 'daemon-sheet-leave': daemonMenu.closing }" @click.stop>
+            <view class="daemon-sheet-title">选择节点</view>
+            <view class="daemon-sheet-subtitle">切换后会立刻刷新当前节点的实例列表</view>
+
+            <view v-if="daemonOptions.length" class="daemon-option-list">
+              <view
+                v-for="item in daemonOptions"
+                :key="item.value"
+                class="daemon-option-item"
+                :class="{ active: item.value === query.daemonId }"
+                @click="handleDaemonSelect(item)"
+              >
+                <view class="daemon-option-main">
+                  <view class="daemon-option-label">{{ item.label }}</view>
+                  <view class="daemon-option-desc">{{ item.value }}</view>
+                </view>
+                <view v-if="item.value === query.daemonId" class="daemon-option-check" />
+              </view>
+            </view>
+
+            <view v-else class="app-empty">暂无可用节点</view>
           </view>
         </view>
 
@@ -129,9 +157,8 @@
           </view>
         </view>
       </view>
-    </AppPageScroll>
-    <AppTabbar current="instances" />
-  </view>
+    </view>
+  </AppTabFrame>
 </template>
 
 <script setup>
@@ -139,11 +166,10 @@
 import { computed, reactive, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import { fetchOverview } from '../../api/dashboard';
-import { fetchInstanceList, killInstance, restartInstance, startInstance, stopInstance } from '../../api/instances';
-import AppPageScroll from '../../components/AppPageScroll.vue';
-import AppTabbar from '../../components/AppTabbar.vue';
+import { fetchInstanceDetail, fetchInstanceList, killInstance, restartInstance, startInstance, stopInstance } from '../../api/instances';
+import AppTabFrame from '../../components/AppTabFrame.vue';
 import { useConfigStore } from '../../stores/config';
-import { formatBytes, getInstanceStatusText } from '../../utils/format';
+import { extractMemoryValue, formatBytes, getInstanceStatusText, parseBytesValue } from '../../utils/format';
 import { showToast } from '../../utils/message';
 
 // 获取共享配置仓库。
@@ -176,6 +202,11 @@ const isRefreshing = ref(false);
 // 记录当前执行中的操作。
 const currentActionKey = ref('');
 
+const daemonMenu = reactive({
+  visible: false,
+  closing: false,
+});
+
 // 暴露给滚动容器的刷新状态。
 const refreshing = computed(() => isRefreshing.value);
 
@@ -187,19 +218,14 @@ const daemonOptions = computed(() =>
   }))
 );
 
-// 当前节点下标。
-const daemonIndex = computed(() => {
-  const index = daemonOptions.value.findIndex((item) => item.value === query.daemonId);
-  return index >= 0 ? index : 0;
-});
-
 // 当前节点文案。
 const currentDaemonLabel = computed(() => {
   if (!daemonOptions.value.length) {
     return '暂无可用节点';
   }
 
-  return daemonOptions.value[daemonIndex.value]?.label || daemonOptions.value[0]?.label || '请选择节点';
+  const currentItem = daemonOptions.value.find((item) => item.value === query.daemonId);
+  return currentItem?.label || daemonOptions.value[0]?.label || '请选择节点';
 });
 
 // 当前已选节点的实例总数优先从 overview 读取，避免分页接口缺少 total 字段。
@@ -304,10 +330,67 @@ function mapInstanceItem(item) {
     statusText: getInstanceStatusText(item.status),
     statusVariant: getStatusVariant(item.status),
     cwdText: config.cwd || '-',
-    memoryText: formatBytes(processInfo.memory),
+    memoryText: formatBytes(resolveInstanceMemory(item)),
     startedText: Number(item.started || 0),
     playersText: currentPlayers >= 0 && maxPlayers >= 0 ? `${currentPlayers}/${maxPlayers}` : '暂无数据',
   };
+}
+
+function resolveInstanceMemory(item) {
+  for (const source of [item?.info, item?.processInfo, item]) {
+    const resolved = extractMemoryValue(source);
+    if (resolved !== undefined) {
+      return resolved;
+    }
+  }
+
+  return 0;
+}
+
+function shouldHydrateRuntimeDetail(item) {
+  const memoryBytes = parseBytesValue(resolveInstanceMemory(item));
+  const status = Number(item?.status ?? 0);
+
+  return status === 3 && memoryBytes < 1024 * 1024;
+}
+
+async function hydrateInstanceRuntimeDetails(items = []) {
+  const hydrated = await Promise.all(
+    items.map(async (item) => {
+      if (!shouldHydrateRuntimeDetail(item)) {
+        return item;
+      }
+
+      try {
+        const response = await fetchInstanceDetail(
+          {
+            daemonId: query.daemonId,
+            uuid: item.instanceUuid,
+          },
+          false
+        );
+        const detailData = response?.data || {};
+
+        return {
+          ...item,
+          ...detailData,
+          info: {
+            ...(item?.info || {}),
+            ...(detailData?.info || {}),
+          },
+          processInfo: {
+            ...(item?.processInfo || {}),
+            ...(detailData?.processInfo || {}),
+          },
+        };
+      } catch (error) {
+        console.error('补充实例运行态信息失败', item?.instanceUuid, error);
+        return item;
+      }
+    })
+  );
+
+  return hydrated;
 }
 
 // 加载实例列表。
@@ -342,7 +425,9 @@ async function loadInstances(showLoading = true) {
         ?? 0
       )
     );
-    instanceList.value = (data.data || []).map(mapInstanceItem);
+    const rawItems = data.data || [];
+    const hydratedItems = await hydrateInstanceRuntimeDetails(rawItems);
+    instanceList.value = hydratedItems.map(mapInstanceItem);
   } catch (error) {
     console.error('加载实例列表失败', error);
     pageInfo.total = 0;
@@ -352,12 +437,45 @@ async function loadInstances(showLoading = true) {
   }
 }
 
-// 节点切换时刷新列表。
-async function handleDaemonChange(event) {
-  const index = Number(event.detail.value || 0);
-  const target = daemonOptions.value[index];
+function openDaemonMenu() {
+  if (!daemonOptions.value.length) {
+    showToast('暂无可用节点');
+    return;
+  }
 
+  daemonMenu.closing = false;
+  daemonMenu.visible = true;
+}
+
+function closeDaemonMenu(immediate = false) {
+  if (!daemonMenu.visible) {
+    return;
+  }
+
+  if (immediate) {
+    daemonMenu.visible = false;
+    daemonMenu.closing = false;
+    return;
+  }
+
+  daemonMenu.closing = true;
+
+  setTimeout(() => {
+    daemonMenu.visible = false;
+    daemonMenu.closing = false;
+  }, 180);
+}
+
+// 节点切换时刷新列表。
+async function handleDaemonSelect(target) {
   if (!target) {
+    closeDaemonMenu();
+    return;
+  }
+
+  closeDaemonMenu();
+
+  if (target.value === query.daemonId) {
     return;
   }
 
@@ -408,7 +526,7 @@ async function goNextPage() {
 // 打开详情页。
 function openDetail(item) {
   uni.navigateTo({
-    url: `/src/pages/instance-detail/index?daemonId=${encodeURIComponent(query.daemonId)}&uuid=${encodeURIComponent(item.instanceUuid)}`,
+    url: `/src/pages/instance-detail/index?daemonId=${encodeURIComponent(query.daemonId)}&uuid=${encodeURIComponent(item.instanceUuid)}&nav=forward`,
   });
 }
 
@@ -538,7 +656,12 @@ async function handleInstanceAction(action, item) {
 .meta-item {
   padding: 18rpx 20rpx;
   border-radius: 22rpx;
-  background: rgba(255, 255, 255, 0.62);
+  background: var(--app-surface-soft);
+  border: 1rpx solid var(--app-border-strong);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.58),
+    0 12rpx 28rpx rgba(77, 102, 140, 0.08);
+  backdrop-filter: blur(24rpx) saturate(138%);
 }
 
 .meta-label {
@@ -557,13 +680,34 @@ async function handleInstanceAction(action, item) {
 }
 
 .instance-node-picker {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 14rpx;
   padding: 18rpx 20rpx;
   border-radius: 22rpx;
-  background: rgba(248, 250, 252, 0.9);
-  border: 1rpx solid rgba(203, 213, 225, 0.68);
+  background: var(--app-surface-soft);
+  border: 1rpx solid var(--app-border-strong);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(24rpx) saturate(140%);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.instance-node-picker::after,
+.instance-search-submit::before,
+.instance-card::before,
+.instance-page-button::before {
+  content: '';
+  position: absolute;
+  inset: 1rpx;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 14% 10%, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
+  pointer-events: none;
 }
 
 .instance-node-label {
@@ -587,8 +731,10 @@ async function handleInstanceAction(action, item) {
   flex-shrink: 0;
   padding: 10rpx 16rpx;
   border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1rpx solid rgba(203, 213, 225, 0.78);
+  background: rgba(255, 255, 255, 0.28);
+  border: 1rpx solid rgba(255, 255, 255, 0.48);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.54);
+  backdrop-filter: blur(20rpx) saturate(138%);
   font-size: 22rpx;
   font-weight: 600;
   color: #64748b;
@@ -629,27 +775,183 @@ async function handleInstanceAction(action, item) {
   margin-top: 14rpx;
 }
 
+.daemon-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28rpx 20rpx;
+  background: rgba(10, 18, 34, 0.18);
+  backdrop-filter: blur(22rpx) saturate(135%);
+  box-sizing: border-box;
+  animation: daemon-overlay-enter 0.22s ease;
+}
+
+.daemon-overlay-leave {
+  animation: daemon-overlay-leave 0.18s ease forwards;
+}
+
+.daemon-sheet {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  max-width: 720rpx;
+  max-height: 72vh;
+  padding: 24rpx;
+  border-radius: 30rpx;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.22)),
+    rgba(255, 255, 255, 0.18);
+  border: 1rpx solid rgba(255, 255, 255, 0.52);
+  box-shadow:
+    0 20rpx 48rpx rgba(15, 23, 42, 0.12),
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.56);
+  backdrop-filter: blur(30rpx) saturate(145%);
+  box-sizing: border-box;
+  animation: daemon-sheet-enter 0.26s ease;
+}
+
+.daemon-sheet-leave {
+  animation: daemon-sheet-leave 0.18s ease forwards;
+}
+
+.daemon-sheet::before,
+.daemon-option-item::before {
+  content: '';
+  position: absolute;
+  inset: 1rpx;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 14% 10%, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+
+.daemon-sheet-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.daemon-sheet-subtitle {
+  margin-top: 8rpx;
+  font-size: 23rpx;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+.daemon-option-list {
+  margin-top: 18rpx;
+  max-height: 54vh;
+  overflow-y: auto;
+}
+
+.daemon-option-list > * + * {
+  margin-top: 14rpx;
+}
+
+.daemon-option-item {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 22rpx;
+  background: rgba(255, 255, 255, 0.28);
+  border: 1rpx solid rgba(255, 255, 255, 0.46);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.54);
+  backdrop-filter: blur(22rpx) saturate(140%);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+.daemon-option-item.active {
+  background:
+    linear-gradient(135deg, rgba(82, 153, 255, 0.18), rgba(148, 210, 255, 0.1)),
+    rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.56),
+    0 14rpx 28rpx rgba(61, 122, 214, 0.1);
+}
+
+.daemon-option-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.daemon-option-label {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #0f172a;
+  word-break: break-all;
+}
+
+.daemon-option-desc {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  line-height: 1.55;
+  color: #64748b;
+  word-break: break-all;
+}
+
+.daemon-option-check {
+  position: relative;
+  width: 40rpx;
+  min-width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(52, 131, 250, 0.92), rgba(35, 183, 255, 0.82));
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.48),
+    0 10rpx 22rpx rgba(37, 99, 235, 0.18);
+}
+
+.daemon-option-check::before {
+  content: '';
+  position: absolute;
+  left: 12rpx;
+  top: 10rpx;
+  width: 12rpx;
+  height: 7rpx;
+  border-left: 4rpx solid #ffffff;
+  border-bottom: 4rpx solid #ffffff;
+  transform: rotate(-45deg);
+}
+
 .instance-search-input {
   flex: 1;
   height: 88rpx;
   padding: 0 24rpx;
   border-radius: 22rpx;
-  background: rgba(248, 250, 252, 0.9);
-  border: 1rpx solid rgba(203, 213, 225, 0.68);
+  background: var(--app-surface-soft);
+  border: 1rpx solid var(--app-border-strong);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.56);
+  backdrop-filter: blur(24rpx) saturate(140%);
   font-size: 28rpx;
   color: #0f172a;
   box-sizing: border-box;
 }
 
 .instance-search-submit {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 88rpx;
   height: 88rpx;
   border-radius: 24rpx;
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  box-shadow: 0 14rpx 28rpx rgba(37, 99, 235, 0.24);
+  background: linear-gradient(135deg, rgba(52, 131, 250, 0.92), rgba(35, 183, 255, 0.82));
+  border: 1rpx solid rgba(255, 255, 255, 0.34);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.44),
+    0 14rpx 28rpx rgba(37, 99, 235, 0.2);
+  backdrop-filter: blur(24rpx) saturate(145%);
 }
 
 .instance-search-icon {
@@ -687,6 +989,8 @@ async function handleInstanceAction(action, item) {
 }
 
 .instance-card {
+  position: relative;
+  overflow: hidden;
   padding: 26rpx;
 }
 
@@ -713,8 +1017,10 @@ async function handleInstanceAction(action, item) {
 .info-item {
   padding: 18rpx;
   border-radius: 20rpx;
-  background: rgba(248, 250, 252, 0.9);
-  border: 1rpx solid rgba(148, 163, 184, 0.12);
+  background: var(--app-surface-soft);
+  border: 1rpx solid var(--app-border);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.54);
+  backdrop-filter: blur(22rpx) saturate(138%);
 }
 
 .info-label {
@@ -740,6 +1046,8 @@ async function handleInstanceAction(action, item) {
 }
 
 .instance-action-pill {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -747,16 +1055,32 @@ async function handleInstanceAction(action, item) {
   min-height: 76rpx;
   padding: 0 14rpx;
   border-radius: 18rpx;
-  border: 1rpx solid rgba(203, 213, 225, 0.9);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 8rpx 20rpx rgba(15, 23, 42, 0.05);
+  border: 1rpx solid rgba(255, 255, 255, 0.46);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.54), rgba(255, 255, 255, 0.18)),
+    rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.56),
+    0 10rpx 24rpx rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(24rpx) saturate(140%);
   box-sizing: border-box;
+}
+
+.instance-action-pill::before {
+  content: '';
+  position: absolute;
+  inset: 1rpx;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 14% 10%, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+  pointer-events: none;
 }
 
 .instance-action-pill.primary {
   color: #ffffff;
-  border: none;
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: rgba(255, 255, 255, 0.34);
+  background: linear-gradient(135deg, rgba(52, 131, 250, 0.92), rgba(35, 183, 255, 0.82));
 }
 
 .instance-action-pill.neutral {
@@ -765,14 +1089,14 @@ async function handleInstanceAction(action, item) {
 
 .instance-action-pill.danger-fill {
   color: #ffffff;
-  border: none;
-  background: linear-gradient(135deg, #fb7185, #ef4444);
+  border-color: rgba(255, 255, 255, 0.28);
+  background: linear-gradient(135deg, rgba(251, 113, 133, 0.92), rgba(239, 68, 68, 0.82));
 }
 
 .instance-action-pill.danger-outline {
   color: #ef4444;
-  border-color: rgba(248, 113, 113, 0.9);
-  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(255, 183, 194, 0.72);
+  background: rgba(255, 255, 255, 0.24);
 }
 
 .instance-action-pill.disabled {
@@ -880,16 +1204,25 @@ async function handleInstanceAction(action, item) {
 }
 
 .instance-page-button {
+  position: relative;
+  overflow: hidden;
   min-width: 132rpx;
   padding: 16rpx 22rpx;
   border-radius: 999rpx;
-  border: 1rpx solid rgba(203, 213, 225, 0.86);
-  background: rgba(248, 250, 252, 0.92);
+  border: 1rpx solid rgba(255, 255, 255, 0.46);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.18)),
+    rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.56);
+  backdrop-filter: blur(24rpx) saturate(138%);
   box-sizing: border-box;
   text-align: center;
   font-size: 24rpx;
   font-weight: 600;
   color: #334155;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .instance-page-button.disabled {
@@ -914,5 +1247,57 @@ async function handleInstanceAction(action, item) {
 .instance-page-divider {
   font-size: 24rpx;
   color: #94a3b8;
+}
+
+.instance-search-submit:active,
+.instance-node-picker:active,
+.daemon-option-item:active,
+.instance-action-pill:active,
+.instance-page-button:active {
+  transform: scale(0.986);
+}
+
+@keyframes daemon-overlay-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes daemon-overlay-leave {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes daemon-sheet-enter {
+  from {
+    opacity: 0.72;
+    transform: translateY(28rpx) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes daemon-sheet-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(24rpx) scale(0.986);
+  }
 }
 </style>

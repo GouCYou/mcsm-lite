@@ -1,6 +1,6 @@
 <template>
-  <view class="dashboard-page">
-    <AppPageScroll :refreshing="refreshing" tab-page @refresh="handlePageRefresh">
+  <AppTabFrame current="dashboard" :refreshing="refreshing" @refresh="handlePageRefresh">
+    <view class="dashboard-page" :class="{ 'dashboard-page-enter': dashboardEnterAnimated }">
       <view class="app-page app-tab-page app-stack">
         <view class="app-card app-hero-card">
           <view class="app-page-title">MCSManager 控制台</view>
@@ -51,10 +51,6 @@
             <view class="info-item">
               <text class="info-label">Node 版本</text>
               <text class="info-value">{{ systemInfo.node || '-' }}</text>
-            </view>
-            <view class="info-item">
-              <text class="info-label">运行时长</text>
-              <text class="info-value">{{ formatUptime(systemInfo.uptime) }}</text>
             </view>
             <view class="info-item">
               <text class="info-label">总内存</text>
@@ -113,20 +109,18 @@
           <view v-else class="app-empty">暂无节点数据，请确认面板和守护进程已正常连接。</view>
         </view>
       </view>
-    </AppPageScroll>
-    <AppTabbar current="dashboard" />
-  </view>
+    </view>
+  </AppTabFrame>
 </template>
 
 <script setup>
 // 控制台页面负责展示面板概览、系统信息和节点总览。
 import { computed, ref } from 'vue';
-import { onShow } from '@dcloudio/uni-app';
+import { onLoad, onShow } from '@dcloudio/uni-app';
 import { fetchOverview } from '../../api/dashboard';
-import AppPageScroll from '../../components/AppPageScroll.vue';
-import AppTabbar from '../../components/AppTabbar.vue';
+import AppTabFrame from '../../components/AppTabFrame.vue';
 import { useConfigStore } from '../../stores/config';
-import { formatBytes, formatPercent, formatUptime, getAvailabilityText } from '../../utils/format';
+import { formatBytes, formatPercent, getAvailabilityText } from '../../utils/format';
 import { showToast } from '../../utils/message';
 
 // 获取共享配置状态。
@@ -159,6 +153,7 @@ const totalInstanceCount = computed(() =>
 
 // 标记页面内部下拉刷新状态。
 const isRefreshing = ref(false);
+const dashboardEnterAnimated = ref(false);
 
 // 控制页面下拉刷新动画状态。
 const refreshing = computed(() => isRefreshing.value);
@@ -172,6 +167,15 @@ const selectedDaemonLabel = computed(() => {
 // 页面显示时刷新一次概览，保持信息尽量新。
 onShow(() => {
   refreshOverview(false);
+});
+
+onLoad((options) => {
+  if (String(options?.nav || '') === 'login') {
+    dashboardEnterAnimated.value = true;
+    setTimeout(() => {
+      dashboardEnterAnimated.value = false;
+    }, 320);
+  }
 });
 
 // 控制台页使用下拉刷新概览数据。
@@ -216,6 +220,11 @@ async function refreshOverview(showSuccessToast) {
 <style scoped>
 .dashboard-page {
   min-height: 100vh;
+  transform-origin: center center;
+}
+
+.dashboard-page-enter {
+  animation: dashboard-page-enter 0.32s ease;
 }
 
 .hero-meta {
@@ -234,7 +243,12 @@ async function refreshOverview(showSuccessToast) {
 .meta-item {
   padding: 18rpx 20rpx;
   border-radius: 22rpx;
-  background: rgba(255, 255, 255, 0.62);
+  background: var(--app-surface-soft);
+  border: 1rpx solid var(--app-border-strong);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.58),
+    0 12rpx 28rpx rgba(77, 102, 140, 0.08);
+  backdrop-filter: blur(24rpx) saturate(138%);
 }
 
 .meta-label {
@@ -261,8 +275,12 @@ async function refreshOverview(showSuccessToast) {
 .info-item {
   padding: 20rpx;
   border-radius: 22rpx;
-  background: rgba(248, 250, 252, 0.9);
-  border: 1rpx solid rgba(148, 163, 184, 0.14);
+  background: var(--app-surface-soft);
+  border: 1rpx solid var(--app-border);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.56),
+    0 12rpx 28rpx rgba(77, 102, 140, 0.08);
+  backdrop-filter: blur(24rpx) saturate(138%);
 }
 
 .info-label {
@@ -285,10 +303,27 @@ async function refreshOverview(showSuccessToast) {
 }
 
 .remote-card {
+  position: relative;
+  overflow: hidden;
   padding: 24rpx;
   border-radius: 24rpx;
-  background: rgba(248, 250, 252, 0.86);
-  border: 1rpx solid rgba(148, 163, 184, 0.14);
+  background: var(--app-surface-soft);
+  border: 1rpx solid var(--app-border);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.56),
+    0 14rpx 32rpx rgba(77, 102, 140, 0.1);
+  backdrop-filter: blur(26rpx) saturate(140%);
+}
+
+.remote-card::before {
+  content: '';
+  position: absolute;
+  inset: 1rpx;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0) 28%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0));
+  pointer-events: none;
 }
 
 .remote-head {
@@ -312,9 +347,23 @@ async function refreshOverview(showSuccessToast) {
 }
 
 .remote-meta {
+  position: relative;
+  overflow: hidden;
   padding: 18rpx;
   border-radius: 18rpx;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.28);
+  border: 1rpx solid rgba(255, 255, 255, 0.44);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.54);
+  backdrop-filter: blur(22rpx) saturate(136%);
+}
+
+.remote-meta::after {
+  content: '';
+  position: absolute;
+  inset: 1rpx;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
+  pointer-events: none;
 }
 
 .remote-meta-label {
@@ -331,5 +380,17 @@ async function refreshOverview(showSuccessToast) {
   line-height: 1.5;
   color: #1e293b;
   word-break: break-all;
+}
+
+@keyframes dashboard-page-enter {
+  from {
+    opacity: 0.78;
+    transform: translateY(28rpx) scale(0.992);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 </style>

@@ -2,10 +2,10 @@
   <scroll-view
     class="page-scroll"
     :class="{ 'page-scroll-tab': tabPage }"
-    scroll-y
+    :scroll-y="scrollEnabled"
     enhanced
     show-scrollbar="false"
-    :refresher-enabled="true"
+    :refresher-enabled="scrollEnabled"
     :refresher-triggered="refreshing"
     refresher-background="transparent"
     @refresherrefresh="handleRefresh"
@@ -27,6 +27,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  scrollEnabled: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits(['refresh']);
@@ -44,6 +48,7 @@ function handleRefresh() {
 <style scoped>
 .page-scroll {
   height: 100vh;
+  background: transparent;
 }
 
 .page-scroll-body {

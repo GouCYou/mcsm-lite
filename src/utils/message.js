@@ -1,21 +1,20 @@
-// 统一封装提示方法，后续切换为自定义轻提示时只需要改这里。
+import { useUiStore } from '../stores/ui';
+
+// 统一封装轻提示，收口到自定义玻璃消息层。
 export function showToast(title, icon = 'none', duration = 2000) {
-  uni.showToast({
-    title,
-    icon,
-    duration,
-  });
+  const uiStore = useUiStore();
+  const type = icon === 'success' ? 'success' : icon === 'error' ? 'error' : 'info';
+  uiStore.showToast(title, type, duration);
 }
 
-// 显示全局加载中提示。
+// 显示全局加载提示。
 export function showLoading(title = '加载中...') {
-  uni.showLoading({
-    title,
-    mask: true,
-  });
+  const uiStore = useUiStore();
+  uiStore.showLoading(title);
 }
 
-// 关闭全局加载中提示。
+// 关闭全局加载提示。
 export function hideLoading() {
-  uni.hideLoading();
+  const uiStore = useUiStore();
+  uiStore.hideLoading();
 }
